@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, Polygon, Marker, useMapEvent } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Marker, useMapEvent, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -282,14 +282,16 @@ function App() {
             {tmpPolygon.length > 0 && <Polygon positions={tmpPolygon} />}
             {/* main polygons and markers */}    
             {
-              groups.map((group,index) =>{     
+              groups.map((group,gindex) =>{     
                 return(
-                  <div key={index}>
+                  <div key={gindex}>
                   {
-                    group.map((polygon,index) =>{               
+                    group.map((polygon,pindex) =>{               
                       return (
-                        <div key={index}>                          
-                          <Polygon positions={polygon} />
+                        <div key={pindex}>                          
+                          <Polygon positions={polygon}>
+                            <Tooltip>{`${gindex + 1} - ${pindex + 1}`}</Tooltip>
+                          </Polygon>
                           {
                             polygon.map((position,index)=>{
                               return(
