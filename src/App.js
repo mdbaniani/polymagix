@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { MapContainer, TileLayer, Polygon, Marker } from 'react-leaflet';
+import { useEffect, useRef, useState } from "react";
+import { MapContainer, TileLayer, Polygon, Marker, useMapEvent } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -16,21 +16,50 @@ let DefaultIcon = L.icon({
 });
 
 L.Marker.prototype.options.icon = DefaultIcon;
-
+const initialMapZoom = 13
+const initialMapCenter = [35.65433882392078, 51.39383912086487]
 let intervalId  
+
+let defaultSettings = localStorage.getItem('Settings')
+
+if(defaultSettings){defaultSettings = JSON.parse(defaultSettings) }
 function App() {
-  const [center,setCenter] = useState([35.65433882392078, 51.39383912086487])
-  const [zoom,setZoom] = useState(13)
-  const [polygons,setPolygons] = useState([])//array of polygons
+  const [groups,setGroups] = useState([])//array of groups of polygons (array of arrays)
   const [tmpPolygon, setTmpPolygon] = useState([]);//aray of dots
-  const [imageUrl, setImageUrl] = useState(null);
-  const [isImageLocked,setIsImageLocked] = useState(false)
+  const [imageUrl, setImageUrl] = useState(defaultSettings && defaultSettings.imageUrl ? defaultSettings.imageUrl : null);
+  const [isImageLocked,setIsImageLocked] = useState(defaultSettings ? defaultSettings.isImageLocked : false)
   const [imageRotation,setImageRotation] = useState(0)
   const [imageScale,setImageScale] = useState(1)
   const [imageTranslateX,setImageTranslateX] = useState(0)
   const [imageTranslateY,setImageTranslateY] = useState(0)
   const [predefinedPolygons,setPredefinedPolygons] = useState('[]')
+  const [selectedGroup,setSelectedGroup] = useState(0)
 
+
+  const latestMapPane = useRef({x:0,y:0});
+  const mapCenter = useRef(defaultSettings? defaultSettings.mapCenter : initialMapCenter)
+  const latestMapZoom = useRef(defaultSettings? defaultSettings.mapZoom : initialMapZoom);
+
+  useEffect(()=>{
+    if(defaultSettings){
+      console.log('default settings found.',defaultSettings)      
+      setImageRotation(defaultSettings.imageRotation)
+      setImageScale(defaultSettings.imageScale)
+      setImageTranslateX(defaultSettings.imageTranslateX)
+      setImageTranslateY(defaultSettings.imageTranslateY)   
+      if(defaultSettings.imageUrl){
+        setImageUrl(defaultSettings.imageUrl)
+      }
+      
+      //setting map center and zoom doesnt have any effect here
+    }
+
+    const defaultPolygons = localStorage.getItem('Polygons')
+    if(defaultPolygons){
+      setGroups(JSON.parse(defaultPolygons))
+    }
+
+  },[])
   
   const prepareTmpPolygon = (position) => {
     console.log(position)    
@@ -38,10 +67,15 @@ function App() {
     setTmpPolygon(newPolygon);
   };
   const addPolygon = () =>{
-    let tmp = [...polygons, tmpPolygon];
-    setPolygons(tmp)
+    if(tmpPolygon.length < 3){
+      window.alert('at least 3 points should be selected on the map')
+      return
+    }
+    let tmp = [...groups];
+    tmp[selectedGroup].push(tmpPolygon)
+    // console.log(tmp)
+    setGroups(tmp)
     setTmpPolygon([])//empty temp polygon
-    console.log(polygons)
   }
   const undoTempPolygon = () => {
     let tmp = [...tmpPolygon]
@@ -63,13 +97,14 @@ function App() {
 
   const handlePolygonPreLoad = (e) => {
     e.preventDefault();       
-    setPolygons((prev) => [...JSON.parse(predefinedPolygons)])    
+    setGroups((prev) => [...JSON.parse(predefinedPolygons)])    
   }
 
   const moveImage = (x,y) => {
     setImageTranslateX((prevPos) => prevPos +=x);    
     setImageTranslateY((prevPos) => prevPos +=y);   
   }
+
 
   return (
     <div className="App">
@@ -82,6 +117,16 @@ function App() {
             <label htmlFor="image-url"></label>
             <input type="file" onChange={handleImageChange} id="image-url" name="image-url" />         
           </fieldset>                   
+        </form>
+        {/* predefined polygons */}
+        <form>
+          <fieldset>
+            <legend>Predefined Polygons</legend><br />
+            <p>You can can also enter predefined polygons as an array of arrays of polygons.</p>
+            <label htmlFor="pre-defined-polygons"></label><br/>
+            <textarea id="pre-defined-polygons" name="pre-defined-polygons" rows="4" cols="50" value={predefinedPolygons} onChange={(e)=>{setPredefinedPolygons(e.target.value)}}></textarea><br />
+            <button onClick={handlePolygonPreLoad}>Submit</button>
+          </fieldset>
         </form>
         {/* image controls */}
         <form>
@@ -101,7 +146,7 @@ function App() {
               setImageRotation((prevVal) => prevVal += 1)
             }}>Rotate Clockwise</button>
 
-        <button 
+        <button
             onMouseDown={(e)=>{
               e.preventDefault();   
               intervalId = setInterval(()=>{setImageRotation((prevVal) => prevVal -= 1)},100)
@@ -192,20 +237,12 @@ function App() {
                 checked={isImageLocked}
                 onChange={()=>{setIsImageLocked((prev) => !prev)}}
               />
-              Lock Image
+              Lock Image To Map
             </label>
+            
           </fieldset>                   
         </form>
         
-        <form>
-          <fieldset>
-            <legend>Predefined Polygons</legend><br />
-            <p>You can can also enter predefined polygons as an array of polygons.</p>
-            <label htmlFor="pre-defined-polygons"></label><br/>
-            <textarea id="pre-defined-polygons" name="pre-defined-polygons" rows="4" cols="50" value={predefinedPolygons} onChange={(e)=>{setPredefinedPolygons(e.target.value)}}></textarea><br />
-            <button onClick={handlePolygonPreLoad}>Submit</button>
-          </fieldset>
-        </form>
 
         {/* map outer container */}
         <div 
@@ -232,8 +269,8 @@ function App() {
               alt="Selected" /> */}
               </div>}
           <MapContainer 
-            center={center} 
-            zoom={zoom}   
+            center={mapCenter.current} 
+            zoom={latestMapZoom.current}   
             zoomSnap={1} //default is 1     
             style={{
               height:'100%',
@@ -243,66 +280,262 @@ function App() {
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             {/* temporary polygon */}
             {tmpPolygon.length > 0 && <Polygon positions={tmpPolygon} />}
-            {/* main polygons and markers */}
-            {polygons.map((polygon,index) => {
-              return (
-                <div key={index}>
-                  <Polygon positions={polygon} />
+            {/* main polygons and markers */}    
+            {
+              groups.map((group,index) =>{     
+                return(
+                  <div key={index}>
                   {
-                    polygon.map((position,index)=>{
-                      return(
-                        <Marker key={index} 
-                          position={position} 
-                          eventHandlers={{
-                            click: (e) => {
-                              console.log('marker clicked')
-                              prepareTmpPolygon([e.latlng.lat,e.latlng.lng])
-                            },
-                          }}                        
-                          ></Marker>
-                      )
+                    group.map((polygon,index) =>{               
+                      return (
+                        <div key={index}>                          
+                          <Polygon positions={polygon} />
+                          {
+                            polygon.map((position,index)=>{
+                              return(
+                                <Marker key={index} 
+                                  position={position} 
+                                  eventHandlers={{
+                                    click: (e) => {
+                                      console.log('marker clicked')
+                                      prepareTmpPolygon([e.latlng.lat,e.latlng.lng])
+                                    },
+                                  }}                        
+                                  ></Marker>
+                              )
+                            })
+                          }
+                        </div>                
+                      )                                             
                     })
-                  }
+                  }                  
                 </div>                
-              )
-            })}
+                )
+                
+              })
+              
+            }
             <MapEvents 
-              initialZoom={zoom}   
               imageScale={imageScale}
-              onClick={(e) => {prepareTmpPolygon([e.latlng.lat,e.latlng.lng])}} 
-              onZoomIn={()=>{
-                if(isImageLocked)
-                setImageScale((prev) => prev *= 2)
-              }}              
-              onZoomOut={()=>{
-                if(isImageLocked)
-                setImageScale((prev) => prev /= 2)
-              }}      
-              onMapMove={(x,y)=>{
-                if(isImageLocked)
-                moveImage(x,y)
-              }}              
+              onClick={(e) => {
+                console.log('clicked on map.')
+                prepareTmpPolygon([e.latlng.lat,e.latlng.lng])
+              }} 
+
+              onZoomEnd={(e)=>{
+                const currentZoom = e.target.getZoom();
+                const previousZoom = latestMapZoom.current;
+          
+                if (currentZoom > previousZoom) {
+                  console.log('Map zoomed in');
+                  if(isImageLocked)
+                  setImageScale((prev) => prev *= 2)
+                } else if (currentZoom < previousZoom) {
+                  console.log('Map zoomed out');
+                  if(isImageLocked)
+                  setImageScale((prev) => prev /= 2)
+                }                
+                console.log('zoom level changed to',e.target.getZoom())
+                latestMapZoom.current = currentZoom;
+              }}
+
+              onDragEnd={(e)=>{
+                const currentPane = e.target._getMapPanePos();
+                if (latestMapPane) {
+                    const dx = currentPane.x - latestMapPane.current.x;
+                    const dy = currentPane.y - latestMapPane.current.y;
+                    console.log(`Map moved by: ${dx} pixels horizontally, ${dy} pixels vertically`);           
+                    if(isImageLocked)
+                    moveImage(dx/imageScale,dy/imageScale)                        
+                }
+                latestMapPane.current = currentPane
+
+                let mcenter = e.target.getCenter()
+                mapCenter.current = [mcenter.lat,mcenter.lng]
+              }}
               />
-              <button style={{zIndex:500,position:'absolute',bottom:0}}>test</button>
           </MapContainer>
         </div>
-        
-        <button onClick={addPolygon}>add polygon</button>
-        <button onClick={undoTempPolygon}>undo</button>
-        <button onClick={null}>copy polygon object</button>
+        <form>
+          <fieldset>
+            <legend>Settings</legend>
+            <button
+              onClick={(e)=>{
+                e.preventDefault()
+                const tmp = {
+                  imageRotation: imageRotation,
+                  imageScale:imageScale,
+                  imageTranslateX:imageTranslateX,
+                  imageTranslateY:imageTranslateY,
+                  mapZoom:latestMapZoom.current,
+                  mapCenter:mapCenter.current,
+                  imageUrl:imageUrl,
+                  isImageLocked:isImageLocked
+                }
+                localStorage.setItem('Settings',JSON.stringify(tmp))
+                window.alert('Settings Saved.')
+              }}
+              >
+                Save Settings
+              </button>
+              <button
+                onClick={(e)=>{
+                e.preventDefault()      
+                if (window.confirm("Are U sure?")){
+                  localStorage.removeItem('Settings')
+                  window.alert('Saved Settings Removed.')
+                }             
+              }}
+              >
+                reset
+              </button>
+            </fieldset>
+        </form>
+        <form>
+          <fieldset>
+            <legend>Polygons</legend>              
+              <div>
+                <span>{`${tmpPolygon.length} points selected.`}</span>
+                {tmpPolygon.length > 0 ?
+                  <button onClick={(e) => {
+                    e.preventDefault()
+                    undoTempPolygon()
+                    }}>undo</button>
+                :null}                
+              </div>
+              <div>
+                {groups.length > 0 ?
+                <div>
+                  <button onClick={(e)=>{
+                    e.preventDefault()
+                    addPolygon()
+                    }}>add polygon</button>
+                    <span> to group </span>
+                    <select 
+                      onChange={(e)=>{setSelectedGroup(parseInt(e.target.value))}} >
+                      {
+                        groups.map((group,index)=>{
+                          return(
+                            <option key={index} value={index}>{index + 1}</option>
+                          )
+                        })
+                     
+                      }
+                    </select>
+                    <p>{`group ${selectedGroup + 1} has been selected`}</p>
+                 </div>
+                
+                  :
+                  <p>please add a group before assigning a polygon to a group</p>
+                }
+              </div>     
+              <div>
+                <button onClick={(e)=>{
+                  e.preventDefault();
+                  let tmp = [...groups]
+                  tmp.push([])
+                  setGroups(tmp)
+                }}>
+                  add group
+                </button>
+              </div>               
 
-        <h2>Polygons</h2>
-        <ol>
-          {polygons.length > 0 ?
-            polygons.map((polygon,index)=>{
-              return(
-                <li key={index}>{JSON.stringify(polygon)}</li>
-              )
-            })
-          :<p>No polygons found yet.</p>}
-        </ol>
+              {
+                groups.length > 0 ? 
+                <ol>
+                {groups.map((group, gindex) => {
+                  return (
+                    <div key={gindex}>
+                      <span>{`group ${gindex + 1} :`}</span>
+                      <button
+                        onClick={() => {
+                          if (window.confirm("Are U sure?")){
+                            let tmp = [...groups]
+                            tmp.splice(gindex, 1)
+                            setGroups(tmp);
+                          }                    
+                        }}
+                      >
+                        delete
+                      </button>
+                      <ol>
+                      {group.map((polygon, pindex) => {
+                        return (
+                          <div key={pindex}>
+                            <li key={pindex}>
+                              {JSON.stringify(polygon).substring(0, 30) + "..."}
+                              <button
+                                onClick={() => {
+                                  if (window.confirm("Are U sure?")) {
+                                    let tmp = [...groups]
+                                    tmp[gindex].splice(pindex, 1)
+                                    setGroups(tmp);
+                                  }                             
+                                }}
+                              >
+                                delete
+                              </button>
+                            </li>
+                          </div>                    
+                        );                  
+                      })}
+                      </ol>   
+
+                    </div>
+                  );
+                })}
+        
+                </ol>
+                :
+                <p>no polygons found.</p>
+              }    
+              {/* save polygons */}
+              {groups.length > 0 ?
+              <div>
+                <button
+                onClick={(e)=>{
+                  e.preventDefault()                 
+                  localStorage.setItem('Polygons',JSON.stringify(groups))
+                  window.alert('Polygons Saved.')
+                }}
+                >
+                  Save Polygons
+                </button>
+                <button
+                  onClick={(e)=>{
+                  e.preventDefault()      
+                  if (window.confirm("Are U sure?")){
+                    localStorage.removeItem('Polygons')
+                    setGroups([])
+                    window.alert('Saved Polygons Removed.')
+                  }             
+                }}
+                >
+                  reset
+                </button>
+                <button
+                  onClick={(e)=>{
+                  e.preventDefault()      
+                  navigator.clipboard.writeText(JSON.stringify(groups))
+                  .then(() => {
+                    window.alert('Polygons copied to clipboard.')
+                  })
+                  .catch((error) => {
+                    window.alert('There was an error while copying polygons to clipboard.')
+                    console.error("Failed to copy: ", error);
+                  });
+                }}
+                >
+                  copy
+                </button>
+              </div>
+              :null}
+              
+          </fieldset>                   
+        </form>        
     </div>
   );
 }
+
 
 export default App;
