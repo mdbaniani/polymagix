@@ -276,6 +276,7 @@ function App() {
               height:'100%',
               opacity:0.5
             }}
+            scrollWheelZoom={false}
             >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             {/* temporary polygon */}
