@@ -18,10 +18,8 @@ let DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon;
 const initialMapZoom = 13
 const initialMapCenter = [35.65433882392078, 51.39383912086487]
-const defaultSettings = localStorage.getItem('Settings')
+const defaultSettings = localStorage.getItem('Settings') ? JSON.parse(localStorage.getItem('Settings')) : undefined
 
-
-if(defaultSettings){defaultSettings = JSON.parse(defaultSettings) }
 function App() {
   const [districts,setDistricts] = useState([])//array of arrays of zone latlng ids (array of array of arrays)
   const [tmpZoneLatlngIds, setTmpZoneLatlngIds] = useState([]);
