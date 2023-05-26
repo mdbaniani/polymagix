@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, Polygon, Marker, useMapEvent, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import L, { latLng } from 'leaflet';
 
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
@@ -18,28 +18,28 @@ let DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon;
 const initialMapZoom = 13
 const initialMapCenter = [35.65433882392078, 51.39383912086487]
-let intervalId  
+const defaultSettings = localStorage.getItem('Settings')
 
-let defaultSettings = localStorage.getItem('Settings')
 
 if(defaultSettings){defaultSettings = JSON.parse(defaultSettings) }
 function App() {
-  const [groups,setGroups] = useState([])//array of groups of polygons (array of arrays)
-  const [tmpPolygon, setTmpPolygon] = useState([]);//aray of dots
+  const [districts,setDistricts] = useState([])//array of arrays of zone latlng ids (array of array of arrays)
+  const [tmpZoneLatlngIds, setTmpZoneLatlngIds] = useState([]);
   const [imageUrl, setImageUrl] = useState(defaultSettings && defaultSettings.imageUrl ? defaultSettings.imageUrl : null);
   const [isImageLocked,setIsImageLocked] = useState(defaultSettings ? defaultSettings.isImageLocked : false)
+  const [isImageHidden,setIsImageHidden] = useState(false)
   const [imageRotation,setImageRotation] = useState(0)
   const [imageScale,setImageScale] = useState(1)
   const [imageTranslateX,setImageTranslateX] = useState(0)
   const [imageTranslateY,setImageTranslateY] = useState(0)
-  const [predefinedPolygons,setPredefinedPolygons] = useState('[]')
-  const [selectedGroup,setSelectedGroup] = useState(0)
-
+  const [predefinedGeoData,setPredefinedGeoData] = useState()
+  const [selectedDistrict,setSelectedDistrict] = useState(0)
+  const [latlngs,setLatlngs] = useState([{id:0,latlng:[0,0]}])
 
   const latestMapPane = useRef({x:0,y:0});
   const mapCenter = useRef(defaultSettings? defaultSettings.mapCenter : initialMapCenter)
   const latestMapZoom = useRef(defaultSettings? defaultSettings.mapZoom : initialMapZoom);
-
+  const intervalId = useRef()
   useEffect(()=>{
     if(defaultSettings){
       console.log('default settings found.',defaultSettings)      
@@ -54,33 +54,84 @@ function App() {
       //setting map center and zoom doesnt have any effect here
     }
 
-    const defaultPolygons = localStorage.getItem('Polygons')
-    if(defaultPolygons){
-      setGroups(JSON.parse(defaultPolygons))
+    const defaultGeoData = localStorage.getItem('GeoData')
+    if(defaultGeoData){
+      console.log('default geodata found',defaultGeoData)
+      setLatlngs(JSON.parse(defaultGeoData).latlngs)
+      setDistricts(JSON.parse(defaultGeoData).districts)
     }
 
   },[])
+
+  const findHighestLatlngId = () =>{
+    const objectWithHighestId = latlngs.reduce((prev, current) =>
+    prev.id > current.id ? prev : current
+    );
+
+    return objectWithHighestId.id
+  }
+
+  const addMemberToLatlngs = (latlng) => {
+    //make object
+    const newId = findHighestLatlngId() + 1
+    const newObj = {
+      id: newId,
+      latlng : latlng
+    }
+    
+    setLatlngs([...latlngs, newObj]);
+    return newObj
+  }
+
+  const getLatlngsFromIds = (ids) =>{
+    if(typeof(ids) === 'object'){ //id ids is array
+      return latlngs
+      .filter(obj => ids.includes(obj.id))
+      .map(obj => obj.latlng);
+    }else{//if it is a single id
+      const foundObject = latlngs.find(obj => obj.id === ids);
+      return foundObject ? foundObject.latlng : null;
+    }
+    
+  }
   
-  const prepareTmpPolygon = (position) => {
-    console.log(position)    
-    const newPolygon = [...tmpPolygon, position];
-    setTmpPolygon(newPolygon);
+  
+  const prepareTmpZoneLatlngIds = (e) => {
+    let clickedLatlng = [e.latlng.lat,e.latlng.lng]
+    console.log('selected latlng:',clickedLatlng) 
+    // console.log('current latlngs:',latlngs) 
+    let myLatlngId    
+    //check if latlng is already in latlngs
+    const foundValue = latlngs.find(element => JSON.stringify(element.latlng) === JSON.stringify(clickedLatlng));
+    if(foundValue){
+      myLatlngId = foundValue.id
+    }
+    else{
+      //add new latlng to our collection of latlngs    
+      const newLatlng = addMemberToLatlngs(clickedLatlng)
+      myLatlngId = newLatlng.id
+    }
+    
+    //add my latlng's id to new zone array variable
+    const newZone = [...tmpZoneLatlngIds, myLatlngId];
+    console.log(newZone)
+    setTmpZoneLatlngIds(newZone);
   };
-  const addPolygon = () =>{
-    if(tmpPolygon.length < 3){
+  const addZoneLatlngIdsToDistrict = () =>{
+    if(tmpZoneLatlngIds.length < 3){
       window.alert('at least 3 points should be selected on the map')
       return
     }
-    let tmp = [...groups];
-    tmp[selectedGroup].push(tmpPolygon)
+    let tmp = [...districts];
+    tmp[selectedDistrict].push(tmpZoneLatlngIds)
     // console.log(tmp)
-    setGroups(tmp)
-    setTmpPolygon([])//empty temp polygon
+    setDistricts(tmp)
+    setTmpZoneLatlngIds([])//empty temp zone
   }
-  const undoTempPolygon = () => {
-    let tmp = [...tmpPolygon]
+  const undoTempZoneLatlngIds = () => {
+    let tmp = [...tmpZoneLatlngIds]
     tmp.pop()
-    setTmpPolygon(tmp)
+    setTmpZoneLatlngIds(tmp)
   }
   const handleImageChange = (e) => {
     // const selectedImage = e.target.files[0];
@@ -95,9 +146,10 @@ function App() {
     reader.readAsDataURL(file);
   }
 
-  const handlePolygonPreLoad = (e) => {
+  const handleGeoDataPreLoad = (e) => {
     e.preventDefault();       
-    setGroups((prev) => [...JSON.parse(predefinedPolygons)])    
+    setLatlngs((prev) => [...JSON.parse(predefinedGeoData).latlngs])
+    setDistricts((prev) => [...JSON.parse(predefinedGeoData).districts])        
   }
 
   const moveImage = (x,y) => {
@@ -108,140 +160,165 @@ function App() {
 
   return (
     <div className="App">
-        <h1>Leaflet Map Tool</h1>
+        <h1>Polimagix</h1>
         <p>Use this tool to draw polygons on a map based on an underlying image.</p>
+        <p>This tool can also be used to divide cities into districts and zones.</p>
         <form>
           <fieldset>
             <legend>Underlying Image</legend>
             <p>You can optionally select an image as an underlying layer of the map.</p>
-            <label htmlFor="image-url"></label>
-            <input type="file" onChange={handleImageChange} id="image-url" name="image-url" />         
+            {
+              !imageUrl ? 
+              <>
+                <label htmlFor="image-url"></label>
+                <input type="file" onChange={handleImageChange} id="image-url" name="image-url" />         
+              </>
+              :
+              <button onClick={(e)=>{
+                e.preventDefault()
+                setImageUrl(null)
+              }}>Remove Image</button>
+            }
+            
           </fieldset>                   
         </form>
         {/* predefined polygons */}
         <form>
           <fieldset>
-            <legend>Predefined Polygons</legend><br />
-            <p>You can can also enter predefined polygons as an array of arrays of polygons.</p>
-            <label htmlFor="pre-defined-polygons"></label><br/>
-            <textarea id="pre-defined-polygons" name="pre-defined-polygons" rows="4" cols="50" value={predefinedPolygons} onChange={(e)=>{setPredefinedPolygons(e.target.value)}}></textarea><br />
-            <button onClick={handlePolygonPreLoad}>Submit</button>
+            <legend>Import Geo Data</legend><br />
+            <p>You can import districts and zones as a formatted string if you have previously exported all geo data activity (see below).</p>
+            <label htmlFor="pre-defined-geodata"></label><br/>
+            <textarea id="pre-defined-geodata" name="pre-defined-geodata" rows="4" cols="50" value={predefinedGeoData} onChange={(e)=>{setPredefinedGeoData(e.target.value)}}></textarea><br />
+            <button onClick={handleGeoDataPreLoad}>Submit</button>
           </fieldset>
         </form>
         {/* image controls */}
-        <form>
-          <fieldset>
-            <legend>Image Controls</legend>
-            <button 
-            onMouseDown={(e)=>{
-              e.preventDefault();   
-              intervalId = setInterval(()=>{setImageRotation((prevVal) => prevVal += 1)},100)
-            }} 
-            onMouseUp={(e)=>{
-              e.preventDefault();   
-              clearInterval(intervalId)
-            }}
-            onClick={(e)=>{
-              e.preventDefault();   
-              setImageRotation((prevVal) => prevVal += 1)
-            }}>Rotate Clockwise</button>
+        {
+          imageUrl ? 
+          <form>
+            <fieldset>
+              <legend>Image Controls</legend>
+              <button 
+              onMouseDown={(e)=>{
+                e.preventDefault();   
+                intervalId.current = setInterval(()=>{setImageRotation((prevVal) => prevVal += 1)},100)
+              }} 
+              onMouseUp={(e)=>{
+                e.preventDefault();   
+                clearInterval(intervalId.current)
+              }}
+              onClick={(e)=>{
+                e.preventDefault();   
+                setImageRotation((prevVal) => prevVal += 1)
+              }}>Rotate Clockwise</button>
 
-        <button
-            onMouseDown={(e)=>{
-              e.preventDefault();   
-              intervalId = setInterval(()=>{setImageRotation((prevVal) => prevVal -= 1)},100)
-            }} 
-            onMouseUp={(e)=>{
-              e.preventDefault();   
-              clearInterval(intervalId)
-            }}
-            onClick={(e)=>{
-              e.preventDefault();   
-              setImageRotation((prevVal) => prevVal -= 1)
-              }}>Rotate Counter Clockwise</button>
+            <button
+              onMouseDown={(e)=>{
+                e.preventDefault();   
+                intervalId.current = setInterval(()=>{setImageRotation((prevVal) => prevVal -= 1)},100)
+              }} 
+              onMouseUp={(e)=>{
+                e.preventDefault();   
+                clearInterval(intervalId.current)
+              }}
+              onClick={(e)=>{
+                e.preventDefault();   
+                setImageRotation((prevVal) => prevVal -= 1)
+                }}>Rotate Counter Clockwise</button>
+          
+            <button 
+              onMouseDown={(e)=>{
+                e.preventDefault();   
+                intervalId.current = setInterval(()=>{setImageScale((prevVal) => prevVal + 0.02)},100)
+              }} 
+              onMouseUp={(e)=>{
+                e.preventDefault();   
+                clearInterval(intervalId.current)
+              }}
+              onClick={(e)=>{
+                e.preventDefault();   
+                setImageScale((prevVal) => prevVal + 0.01)
+                }}>Zoom In</button>
+            <button 
+              onMouseDown={(e)=>{
+                e.preventDefault();   
+                intervalId.current = setInterval(()=>{setImageScale((prevVal) => prevVal - 0.02)},100)
+              }} 
+              onMouseUp={(e)=>{
+                e.preventDefault();   
+                clearInterval(intervalId.current)
+              }}
+              onClick={(e)=>{
+                e.preventDefault();   
+                setImageScale((prevVal) => prevVal - 0.01)
+                }}>Zoom Out</button>
+
+            <button 
+              onMouseDown={(e)=>{
+                e.preventDefault();   
+                intervalId.current = setInterval(()=>{moveImage(0,-10)},100)
+              }} 
+              onMouseUp={(e)=>{
+                e.preventDefault();   
+                clearInterval(intervalId.current)
+              }}
+              onClick={(e)=>{
+                e.preventDefault();   
+                moveImage(0,-1)
+                }}>Move Up</button>
+            <button 
+              onMouseDown={(e)=>{
+                e.preventDefault();   
+                intervalId.current = setInterval(()=>{moveImage(0,10)},100)
+              }} 
+              onMouseUp={(e)=>{
+                e.preventDefault();   
+                clearInterval(intervalId.current)}}
+              onClick={(e)=>{
+                e.preventDefault();   
+                moveImage(0,1)}}>Move Down</button>
+              <button 
+              onMouseDown={(e)=>{
+                e.preventDefault();   
+                intervalId.current = setInterval(()=>{moveImage(10,0)},100)}} 
+              onMouseUp={(e)=>{
+                e.preventDefault();   
+                clearInterval(intervalId.current)}}
+              onClick={(e)=>{
+                e.preventDefault();   
+                moveImage(1,0)}}>Move Right</button>
+              <button 
+              onMouseDown={(e)=>{
+                e.preventDefault();   
+                intervalId.current = setInterval(()=>{moveImage(-10,0)},100)}} 
+              onMouseUp={(e)=>{
+                e.preventDefault();   
+                clearInterval(intervalId.current)}}
+              onClick={(e)=>{
+                e.preventDefault();   
+                moveImage(-1,0)}}>Move Left</button>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isImageLocked}
+                  onChange={()=>{setIsImageLocked((prev) => !prev)}}
+                />
+                Lock Image To Map
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isImageHidden}
+                  onChange={()=>{setIsImageHidden((prev) => !prev)}}
+                />
+                Hide Image
+              </label>
+              
+            </fieldset>                   
+          </form>
+          :null
+        }
         
-          <button 
-            onMouseDown={(e)=>{
-              e.preventDefault();   
-              intervalId = setInterval(()=>{setImageScale((prevVal) => prevVal + 0.02)},100)
-            }} 
-            onMouseUp={(e)=>{
-              e.preventDefault();   
-              clearInterval(intervalId)
-            }}
-            onClick={(e)=>{
-              e.preventDefault();   
-              setImageScale((prevVal) => prevVal + 0.01)
-              }}>Zoom In</button>
-          <button 
-            onMouseDown={(e)=>{
-              e.preventDefault();   
-              intervalId = setInterval(()=>{setImageScale((prevVal) => prevVal - 0.02)},100)
-            }} 
-            onMouseUp={(e)=>{
-              e.preventDefault();   
-              clearInterval(intervalId)
-            }}
-            onClick={(e)=>{
-              e.preventDefault();   
-              setImageScale((prevVal) => prevVal - 0.01)
-              }}>Zoom Out</button>
-
-           <button 
-            onMouseDown={(e)=>{
-              e.preventDefault();   
-              intervalId = setInterval(()=>{moveImage(0,-10)},100)
-            }} 
-            onMouseUp={(e)=>{
-              e.preventDefault();   
-              clearInterval(intervalId)
-            }}
-            onClick={(e)=>{
-              e.preventDefault();   
-              moveImage(0,-1)
-              }}>Move Up</button>
-           <button 
-            onMouseDown={(e)=>{
-              e.preventDefault();   
-              intervalId = setInterval(()=>{moveImage(0,10)},100)
-            }} 
-            onMouseUp={(e)=>{
-              e.preventDefault();   
-              clearInterval(intervalId)}}
-            onClick={(e)=>{
-              e.preventDefault();   
-              moveImage(0,1)}}>Move Down</button>
-            <button 
-            onMouseDown={(e)=>{
-              e.preventDefault();   
-              intervalId = setInterval(()=>{moveImage(10,0)},100)}} 
-            onMouseUp={(e)=>{
-              e.preventDefault();   
-              clearInterval(intervalId)}}
-            onClick={(e)=>{
-              e.preventDefault();   
-              moveImage(1,0)}}>Move Right</button>
-            <button 
-            onMouseDown={(e)=>{
-              e.preventDefault();   
-              intervalId = setInterval(()=>{moveImage(-10,0)},100)}} 
-            onMouseUp={(e)=>{
-              e.preventDefault();   
-              clearInterval(intervalId)}}
-            onClick={(e)=>{
-              e.preventDefault();   
-              moveImage(-1,0)}}>Move Left</button>
-            <label>
-              <input
-                type="checkbox"
-                checked={isImageLocked}
-                onChange={()=>{setIsImageLocked((prev) => !prev)}}
-              />
-              Lock Image To Map
-            </label>
-            
-          </fieldset>                   
-        </form>
         
 
         {/* map outer container */}
@@ -261,7 +338,8 @@ function App() {
             backgroundImage: `url(${imageUrl})`,
             backgroundSize: 'contain',
             backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat'
+            backgroundRepeat: 'no-repeat',
+            opacity:isImageHidden ? 0 : 1
             }}>
               {/* <img src={image} 
             style={{
@@ -274,35 +352,50 @@ function App() {
             zoomSnap={1} //default is 1     
             style={{
               height:'100%',
-              opacity:0.5
+              opacity:0.5 //this style can not be changed upon state change
             }}
             scrollWheelZoom={false}
             >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            {/* temporary polygon */}
-            {tmpPolygon.length > 0 && <Polygon positions={tmpPolygon} />}
+            {/* temporary zone */}
+            {tmpZoneLatlngIds.length > 0 && <Polygon positions={getLatlngsFromIds(tmpZoneLatlngIds)} />}
             {/* main polygons and markers */}    
             {
-              groups.map((group,gindex) =>{     
+              districts.map((district,dindex) =>{     
                 return(
-                  <div key={gindex}>
+                  <div key={dindex}>
                   {
-                    group.map((polygon,pindex) =>{               
+                    district.map((zone,zindex) =>{               
                       return (
-                        <div key={pindex}>                          
-                          <Polygon positions={polygon}>
-                            <Tooltip>{`${gindex + 1} - ${pindex + 1}`}</Tooltip>
+                        <div key={zindex}>                          
+                          <Polygon positions={getLatlngsFromIds(zone)}>
+                            <Tooltip>{`${dindex + 1} - ${zindex + 1}`}</Tooltip>
                           </Polygon>
                           {
-                            polygon.map((position,index)=>{
+                            zone.map((latlngId,index)=>{
                               return(
                                 <Marker key={index} 
-                                  position={position} 
+                                  position={getLatlngsFromIds(latlngId)} 
+                                  draggable={true}
                                   eventHandlers={{
                                     click: (e) => {
                                       console.log('marker clicked')
-                                      prepareTmpPolygon([e.latlng.lat,e.latlng.lng])
+                                      prepareTmpZoneLatlngIds(e)
                                     },
+                                    dragend: (e) => {
+                                      const { lat, lng } = e.target.getLatLng();
+                                      // Do something with the updated latlng after dragging
+                                      console.log('marker dragged to:',[lat,lng])
+                                      //update latlngs object
+                                      setLatlngs(prevArray => {
+                                        return prevArray.map(obj => {
+                                          if (obj.id === latlngId) {
+                                            return { ...obj, latlng: [lat,lng]};
+                                          }
+                                          return obj;
+                                        });
+                                      });
+                                    }
                                   }}                        
                                   ></Marker>
                               )
@@ -321,8 +414,8 @@ function App() {
             <MapEvents 
               imageScale={imageScale}
               onClick={(e) => {
-                console.log('clicked on map.')
-                prepareTmpPolygon([e.latlng.lat,e.latlng.lng])
+                // console.log('clicked on map.')
+                prepareTmpZoneLatlngIds(e)
               }} 
 
               onZoomEnd={(e)=>{
@@ -396,28 +489,28 @@ function App() {
         </form>
         <form>
           <fieldset>
-            <legend>Polygons</legend>              
+            <legend>Districts</legend>              
               <div>
-                <span>{`${tmpPolygon.length} points selected.`}</span>
-                {tmpPolygon.length > 0 ?
+                <span>{`${tmpZoneLatlngIds.length} points selected.`}</span>
+                {tmpZoneLatlngIds.length > 0 ?
                   <button onClick={(e) => {
                     e.preventDefault()
-                    undoTempPolygon()
+                    undoTempZoneLatlngIds()
                     }}>undo</button>
                 :null}                
               </div>
               <div>
-                {groups.length > 0 ?
+                {districts.length > 0 ?
                 <div>
                   <button onClick={(e)=>{
                     e.preventDefault()
-                    addPolygon()
-                    }}>add polygon</button>
-                    <span> to group </span>
+                    addZoneLatlngIdsToDistrict()
+                    }}>add zone</button>
+                    <span> to district </span>
                     <select 
-                      onChange={(e)=>{setSelectedGroup(parseInt(e.target.value))}} >
+                      onChange={(e)=>{setSelectedDistrict(parseInt(e.target.value))}} >
                       {
-                        groups.map((group,index)=>{
+                        districts.map((district,index)=>{
                           return(
                             <option key={index} value={index}>{index + 1}</option>
                           )
@@ -425,54 +518,56 @@ function App() {
                      
                       }
                     </select>
-                    <p>{`group ${selectedGroup + 1} has been selected`}</p>
+                    <p>{`district ${selectedDistrict + 1} has been selected`}</p>
                  </div>
                 
                   :
-                  <p>please add a group before assigning a polygon to a group</p>
+                  <p>please add a district before assigning a zone to a district</p>
                 }
               </div>     
               <div>
                 <button onClick={(e)=>{
                   e.preventDefault();
-                  let tmp = [...groups]
+                  let tmp = [...districts]
                   tmp.push([])
-                  setGroups(tmp)
+                  setDistricts(tmp)
                 }}>
-                  add group
+                  add district
                 </button>
               </div>               
 
               {
-                groups.length > 0 ? 
+                districts.length > 0 ? 
                 <ol>
-                {groups.map((group, gindex) => {
+                {districts.map((district, dindex) => {
                   return (
-                    <div key={gindex}>
-                      <span>{`group ${gindex + 1} :`}</span>
+                    <div key={dindex}>
+                      <span>{`district ${dindex + 1} :`}</span>
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
                           if (window.confirm("Are U sure?")){
-                            let tmp = [...groups]
-                            tmp.splice(gindex, 1)
-                            setGroups(tmp);
+                            e.preventDefault()
+                            let tmp = [...districts]
+                            tmp.splice(dindex, 1)
+                            setDistricts(tmp);
                           }                    
                         }}
                       >
                         delete
                       </button>
                       <ol>
-                      {group.map((polygon, pindex) => {
+                      {district.map((zone, zindex) => {
                         return (
-                          <div key={pindex}>
-                            <li key={pindex}>
-                              {JSON.stringify(polygon).substring(0, 30) + "..."}
+                          <div key={zindex}>
+                            <li>
+                              {JSON.stringify(getLatlngsFromIds(zone)).substring(0, 30) + "..."}
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
                                   if (window.confirm("Are U sure?")) {
-                                    let tmp = [...groups]
-                                    tmp[gindex].splice(pindex, 1)
-                                    setGroups(tmp);
+                                    e.preventDefault()
+                                    let tmp = [...districts]
+                                    tmp[dindex].splice(zindex, 1)
+                                    setDistricts(tmp);
                                   }                             
                                 }}
                               >
@@ -490,27 +585,30 @@ function App() {
         
                 </ol>
                 :
-                <p>no polygons found.</p>
+                <p>no district found.</p>
               }    
-              {/* save polygons */}
-              {groups.length > 0 ?
+              {/* save districts */}
+              {districts.length > 0 ?
               <div>
                 <button
                 onClick={(e)=>{
                   e.preventDefault()                 
-                  localStorage.setItem('Polygons',JSON.stringify(groups))
-                  window.alert('Polygons Saved.')
+                  localStorage.setItem('GeoData',JSON.stringify({
+                    districts : districts,
+                    latlngs:latlngs
+                  }))
+                  window.alert('Geo Data Saved.')
                 }}
                 >
-                  Save Polygons
+                  Save Geo Data
                 </button>
                 <button
                   onClick={(e)=>{
                   e.preventDefault()      
                   if (window.confirm("Are U sure?")){
-                    localStorage.removeItem('Polygons')
-                    setGroups([])
-                    window.alert('Saved Polygons Removed.')
+                    localStorage.removeItem('GeoData')
+                    setDistricts([])
+                    window.alert('Saved Geo Data Removed.')
                   }             
                 }}
                 >
@@ -519,17 +617,86 @@ function App() {
                 <button
                   onClick={(e)=>{
                   e.preventDefault()      
-                  navigator.clipboard.writeText(JSON.stringify(groups))
+                  navigator.clipboard.writeText(
+                    JSON.stringify({
+                      districts : districts,
+                      latlngs:latlngs
+                    })
+                  )
                   .then(() => {
-                    window.alert('Polygons copied to clipboard.')
+                    window.alert('Geo Data copied to clipboard.')
                   })
                   .catch((error) => {
-                    window.alert('There was an error while copying polygons to clipboard.')
+                    window.alert('There was an error while copying Geo data to clipboard.')
                     console.error("Failed to copy: ", error);
                   });
                 }}
                 >
-                  copy
+                  Export Geo Data
+                </button>
+                <button
+                  onClick={(e)=>{
+                  e.preventDefault()    
+                  const districtsAsArrayOfLatlngs = districts.map(subArray => {
+                    return subArray.map(innerArray => {
+                      return innerArray.map(number => {
+                        const latlngObject = latlngs.find(obj => obj.id === number);
+                        return latlngObject ? latlngObject.latlng : number;
+                      });
+                    });
+                  });
+                  
+                  navigator.clipboard.writeText(
+                    JSON.stringify(districtsAsArrayOfLatlngs)
+                  )
+                  .then(() => {
+                    window.alert('Latlngs copied to clipboard.')
+                  })
+                  .catch((error) => {
+                    window.alert('There was an error while copying latlngs to clipboard.')
+                    console.error("Failed to copy: ", error);
+                  });
+                }}
+                >
+                  Export districts as array of latlngs
+                </button>
+                <button
+                  onClick={(e)=>{
+                  e.preventDefault()    
+                  const transformedObject = {};
+
+                  districts.forEach((subArray, index) => {
+                    transformedObject[index + 1] = {
+                      coordinates: [],
+                      zones: {}
+                    };
+
+                    subArray.forEach((innerArray, innerIndex) => {
+                      const key = `${index + 1}-${innerIndex + 1}`;
+                      const coordinates = innerArray.map(number => {
+                        const latlngObject = latlngs.find(obj => obj.id === number);
+                        return latlngObject ? latlngObject.latlng : null;
+                      });
+
+                      transformedObject[index + 1].zones[key] = {
+                        coordinates: coordinates.filter(Boolean)
+                      };
+                    });
+                  });
+                  
+                  navigator.clipboard.writeText(
+                    JSON.stringify(transformedObject)
+                  )
+                  .then(() => {
+                    window.alert('Object copied to clipboard.')
+                  })
+                  .catch((error) => {
+                    window.alert('There was an error while copying object to clipboard.')
+                    console.error("Failed to copy: ", error);
+                  });
+                }}
+                >
+                  Export districts as nested objects
                 </button>
               </div>
               :null}
