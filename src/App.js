@@ -81,22 +81,22 @@ function App() {
     return newObj
   }
 
-  const getLatlngsFromIds = (ids) =>{
-    if(typeof(ids) === 'object'){ //id ids is array
-      return latlngs
-      .filter(obj => ids.includes(obj.id))
-      .map(obj => obj.latlng);
-    }else{//if it is a single id
+  const getLatlngsFromIds = (ids) => {
+    if (Array.isArray(ids)) {
+      return ids.map(id => {
+        const foundObject = latlngs.find(obj => obj.id === id);
+        return foundObject ? foundObject.latlng : null;
+      });
+    } else {
       const foundObject = latlngs.find(obj => obj.id === ids);
       return foundObject ? foundObject.latlng : null;
     }
-    
-  }
+  };
   
   
   const prepareTmpZoneLatlngIds = (e) => {
     let clickedLatlng = [e.latlng.lat,e.latlng.lng]
-    console.log('selected latlng:',clickedLatlng) 
+    // console.log('selected latlng:',clickedLatlng) 
     // console.log('current latlngs:',latlngs) 
     let myLatlngId    
     //check if latlng is already in latlngs
@@ -112,7 +112,9 @@ function App() {
     
     //add my latlng's id to new zone array variable
     const newZone = [...tmpZoneLatlngIds, myLatlngId];
-    console.log(newZone)
+    console.log('new zone ids',newZone)
+    // console.log('new zone latlngs',getLatlngsFromIds(newZone))
+
     setTmpZoneLatlngIds(newZone);
   };
   const addZoneLatlngIdsToDistrict = () =>{
@@ -450,6 +452,7 @@ function App() {
               />
           </MapContainer>
         </div>
+      
         <form>
           <fieldset>
             <legend>Settings</legend>
