@@ -574,6 +574,33 @@ function App() {
                               >
                                 delete
                               </button>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  if (zindex > 0) { // Check if the zone is not already the first zone
+                                    const tmp = [...districts];
+                                    const zoneToMoveUp = tmp[dindex].splice(zindex, 1)[0];
+                                    tmp[dindex].splice(zindex - 1, 0, zoneToMoveUp);
+                                    setDistricts(tmp);
+                                  }
+                                }}
+                              >
+                                Move Up
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  const tmp = [...districts];
+                                  const district = tmp[dindex];
+                                  if (zindex < district.length - 1) { // Check if the zone is not already the last element
+                                    const zoneToMoveDown = district.splice(zindex, 1)[0];
+                                    district.splice(zindex + 1, 0, zoneToMoveDown);
+                                    setDistricts(tmp);
+                                  }
+                                }}
+                              >
+                                Move Down
+                              </button>
                             </li>
                           </div>                    
                         );                  
