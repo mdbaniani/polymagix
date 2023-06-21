@@ -6,6 +6,8 @@ import L, { latLng } from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import MapEvents from "./Components/MapEvents";
+import SelectedMarkerIcon from "./Components/SelectedMarkerIcon";
+import DefaultMarkerIcon from "./Components/DefaultMarkerIcon";
 
 //fix marker image missing
 let DefaultIcon = L.icon({
@@ -33,11 +35,15 @@ function App() {
   const [predefinedGeoData,setPredefinedGeoData] = useState()
   const [selectedDistrict,setSelectedDistrict] = useState(0)
   const [latlngs,setLatlngs] = useState([{id:0,latlng:[0,0]}])
+  const [selectedPolygon,setSelectedPolygon] = useState(null)
+  const [selectedMarkerIndex,setSelectedMarkerIndex] = useState(null)
+
 
   const latestMapPane = useRef({x:0,y:0});
   const mapCenter = useRef(defaultSettings? defaultSettings.mapCenter : initialMapCenter)
   const latestMapZoom = useRef(defaultSettings? defaultSettings.mapZoom : initialMapZoom);
   const intervalId = useRef()
+
   useEffect(()=>{
     if(defaultSettings){
       console.log('default settings found.',defaultSettings)      
@@ -58,9 +64,31 @@ function App() {
       setLatlngs(JSON.parse(defaultGeoData).latlngs)
       setDistricts(JSON.parse(defaultGeoData).districts)
     }
-
+    
+    
   },[])
+  const checkKeyPress = (event) => {
+    if (event.key === 'Delete') {
+      // Perform your desired action here
+      console.log('Delete key pressed!');
+      console.log('districts',districts)
+      console.log('selected polygon',selectedPolygon)
+      console.log('selected marker index',selectedMarkerIndex)
 
+      if(selectedPolygon !== null && selectedMarkerIndex !== null){
+        const newDistricts = [...districts]
+        const districtIndex = selectedPolygon[0]
+        const zoneIndex = selectedPolygon[1]
+        const markerIndex = selectedMarkerIndex      
+        const zone = newDistricts[districtIndex][zoneIndex]
+        zone.splice(markerIndex, 1)      
+        setDistricts(newDistricts)
+      }
+      //reset marker selection
+      setSelectedMarkerIndex(null)
+
+    }
+  }
   const findHighestLatlngId = () =>{
     const objectWithHighestId = latlngs.reduce((prev, current) =>
     prev.id > current.id ? prev : current
@@ -159,7 +187,7 @@ function App() {
 
 
   return (
-    <div className="App">
+    <div className="App" onKeyDown={checkKeyPress}>
         <h1>Polimagix</h1>
         <p>Use this tool to draw polygons on a map based on an underlying image.</p>
         <p>This tool can also be used to divide cities into districts and zones.</p>
@@ -368,19 +396,73 @@ function App() {
                     district.map((zone,zindex) =>{               
                       return (
                         <div key={zindex}>                          
-                          <Polygon positions={getLatlngsFromIds(zone)}>
+                          <Polygon positions={getLatlngsFromIds(zone)} 
+                            eventHandlers={{
+                              click: (event) => {
+                                if(selectedPolygon !== null && selectedPolygon[0] === dindex && selectedPolygon[1] === zindex){
+                                  setSelectedPolygon(null)
+                                  setSelectedMarkerIndex(null)
+                                }else{
+                                  setSelectedPolygon([dindex,zindex])
+                                  setSelectedMarkerIndex(null)
+                                }
+                              }
+                            }}
+                            pathOptions={{
+                              color: selectedPolygon !== null && selectedPolygon[0] === dindex && selectedPolygon[1] === zindex ? 'red' : '#3388ff' 
+                            }}>
                             <Tooltip>{`${dindex + 1} - ${zindex + 1}`}</Tooltip>
                           </Polygon>
                           {
-                            zone.map((latlngId,index)=>{
+                            zone.map((latlngId,mindex)=>{
                               return(
-                                <Marker key={index} 
+                                <Marker key={mindex} 
                                   position={getLatlngsFromIds(latlngId)} 
                                   draggable={true}
+                                  icon={
+                                    selectedPolygon !== null &&
+                                    selectedPolygon[0] === dindex &&
+                                    selectedPolygon[1] === zindex &&
+                                    selectedMarkerIndex !== null &&
+                                    selectedMarkerIndex === mindex  ? 
+                                    SelectedMarkerIcon :
+                                    DefaultMarkerIcon
+                                    }
                                   eventHandlers={{
                                     click: (e) => {
-                                      console.log('marker clicked')
-                                      prepareTmpZoneLatlngIds(e)
+
+                                      if (e.originalEvent.ctrlKey || e.originalEvent.metaKey) {
+                                        // console.log('Marker clicked with Ctrl key');
+                                        // Handle Ctrl + click event
+
+                                        if(selectedPolygon === null){
+                                          console.log('no polygon is selected.')
+                                          return
+                                        }
+
+                                        if(
+                                          selectedPolygon !== null &&
+                                          selectedPolygon[0] !== dindex ||
+                                          selectedPolygon[1] !== zindex){
+                                            console.log('selecting marker on an unselected polygon')
+                                            return
+                                          }
+
+                                        if(
+                                          selectedPolygon !== null &&
+                                          selectedPolygon[0] === dindex &&
+                                          selectedPolygon[1] === zindex &&
+                                          selectedMarkerIndex !== null &&
+                                          selectedMarkerIndex === mindex                                          
+                                          ) {
+                                            setSelectedMarkerIndex(null)
+                                          } else {
+                                            setSelectedMarkerIndex(mindex)
+                                          }                                        
+                                      }else{
+                                        prepareTmpZoneLatlngIds(e)
+                                      }
+                                    
                                     },
                                     dragend: (e) => {
                                       const { lat, lng } = e.target.getLatLng();
@@ -414,7 +496,15 @@ function App() {
             <MapEvents 
               imageScale={imageScale}
               onClick={(e) => {
-                // console.log('clicked on map.')
+                // console.log('clicked on map.',e)
+                // Check if the target element is a polygon
+                const clickedLayer = e.originalEvent.target;
+    
+                if (clickedLayer.tagName === "path" && clickedLayer.getAttribute("class").includes("leaflet-interactive")) {
+                  // Skip calling prepareTmpZoneLatlngIds for polygons
+                  return;
+                }      
+
                 prepareTmpZoneLatlngIds(e)
               }} 
 
