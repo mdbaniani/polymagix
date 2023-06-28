@@ -70,10 +70,10 @@ function App() {
   const checkKeyPress = (event) => {
     if (event.key === 'Delete') {
       // Perform your desired action here
-      console.log('Delete key pressed!');
-      console.log('districts',districts)
-      console.log('selected polygon',selectedPolygon)
-      console.log('selected marker index',selectedMarkerIndex)
+      // console.log('Delete key pressed!');
+      // console.log('districts',districts)
+      // console.log('selected polygon',selectedPolygon)
+      // console.log('selected marker index',selectedMarkerIndex)
 
       if(selectedPolygon !== null && selectedMarkerIndex !== null){
         const newDistricts = [...districts]
@@ -122,7 +122,7 @@ function App() {
   };
   
   
-  const prepareTmpZoneLatlngIds = (e) => {
+  const handleOnMapClick = (e) => {
     let clickedLatlng = [e.latlng.lat,e.latlng.lng]
     // console.log('selected latlng:',clickedLatlng) 
     // console.log('current latlngs:',latlngs) 
@@ -137,13 +137,24 @@ function App() {
       const newLatlng = addMemberToLatlngs(clickedLatlng)
       myLatlngId = newLatlng.id
     }
-    
-    //add my latlng's id to new zone array variable
-    const newZone = [...tmpZoneLatlngIds, myLatlngId];
-    console.log('new zone ids',newZone)
-    // console.log('new zone latlngs',getLatlngsFromIds(newZone))
 
-    setTmpZoneLatlngIds(newZone);
+    //if polygon and marker selected, add point next to selected polygon
+    if(selectedDistrict !== null && selectedMarkerIndex !== null){
+      const newDistricts = [...districts]
+      const districtIndex = selectedPolygon[0]
+      const zoneIndex = selectedPolygon[1]
+      const markerIndex = selectedMarkerIndex      
+      const zone = newDistricts[districtIndex][zoneIndex]
+      zone.splice(markerIndex + 1, 0 , myLatlngId)      
+      setDistricts(newDistricts)
+    }else{
+      //add my latlng's id to new zone array variable
+      const newZone = [...tmpZoneLatlngIds, myLatlngId];
+      console.log('new zone ids',newZone)
+      // console.log('new zone latlngs',getLatlngsFromIds(newZone))
+
+      setTmpZoneLatlngIds(newZone);
+    }        
   };
   const addZoneLatlngIdsToDistrict = () =>{
     if(tmpZoneLatlngIds.length < 3){
@@ -460,7 +471,7 @@ function App() {
                                             setSelectedMarkerIndex(mindex)
                                           }                                        
                                       }else{
-                                        prepareTmpZoneLatlngIds(e)
+                                        handleOnMapClick(e)
                                       }
                                     
                                     },
@@ -501,11 +512,11 @@ function App() {
                 const clickedLayer = e.originalEvent.target;
     
                 if (clickedLayer.tagName === "path" && clickedLayer.getAttribute("class").includes("leaflet-interactive")) {
-                  // Skip calling prepareTmpZoneLatlngIds for polygons
+                  // Skip calling handleOnMapClick for polygons
                   return;
                 }      
 
-                prepareTmpZoneLatlngIds(e)
+                handleOnMapClick(e)
               }} 
 
               onZoomEnd={(e)=>{
