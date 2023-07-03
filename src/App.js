@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, Polygon, Marker, useMapEvent, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Marker, useMapEvent, Tooltip, LayerGroup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L, { latLng } from 'leaflet';
 
@@ -23,7 +23,7 @@ const initialMapCenter = [35.65433882392078, 51.39383912086487]
 const defaultSettings = localStorage.getItem('Settings') ? JSON.parse(localStorage.getItem('Settings')) : undefined
 
 function App() {
-  const [districts,setDistricts] = useState([])//array of arrays of zone latlng ids (array of array of arrays)
+  const [districts,setDistricts] = useState([])//array of district objects
   const [tmpZoneLatlngIds, setTmpZoneLatlngIds] = useState([]);
   const [imageUrl, setImageUrl] = useState(defaultSettings && defaultSettings.imageUrl ? defaultSettings.imageUrl : null);
   const [isImageLocked,setIsImageLocked] = useState(defaultSettings ? defaultSettings.isImageLocked : false)
@@ -33,8 +33,8 @@ function App() {
   const [imageTranslateX,setImageTranslateX] = useState(0)
   const [imageTranslateY,setImageTranslateY] = useState(0)
   const [predefinedGeoData,setPredefinedGeoData] = useState()
-  const [selectedDistrict,setSelectedDistrict] = useState(0)
-  const [latlngs,setLatlngs] = useState([{id:0,latlng:[0,0]}])
+  const [selectedDistrictId,setSelectedDistrictId] = useState(1)
+  const [latlngs,setLatlngs] = useState([])
   const [selectedPolygon,setSelectedPolygon] = useState(null)
   const [selectedMarkerIndex,setSelectedMarkerIndex] = useState(null)
 
@@ -67,6 +67,18 @@ function App() {
     
     
   },[])
+  const findZoneByDistrictAndZoneId = (districtId, zoneId) => {
+    // Find the district that matches the given districtId
+    const district = districts.find(item => item.id === districtId);
+    if (district) {
+      // Find the zone that matches the given zoneId within the district
+      const zone = district.zones.find(item => item.id === zoneId);
+      if (zone) {
+        return zone;
+      }
+    }
+    return null; // Return null if the district or zone is not found
+  }
   const checkKeyPress = (event) => {
     if (event.key === 'Delete') {
       // Perform your desired action here
@@ -77,11 +89,16 @@ function App() {
 
       if(selectedPolygon !== null && selectedMarkerIndex !== null){
         const newDistricts = [...districts]
-        const districtIndex = selectedPolygon[0]
-        const zoneIndex = selectedPolygon[1]
+        const districtId = selectedPolygon[0]
+        const zoneId = selectedPolygon[1]
         const markerIndex = selectedMarkerIndex      
-        const zone = newDistricts[districtIndex][zoneIndex]
-        zone.splice(markerIndex, 1)      
+        const zone = findZoneByDistrictAndZoneId(districtId,zoneId)
+        // console.log(newDistricts)
+        // console.log(districtId)
+        // console.log(zoneId)
+        // console.log(zone)
+        // return
+        zone.pointIds.splice(markerIndex, 1)      
         setDistricts(newDistricts)
       }
       //reset marker selection
@@ -97,16 +114,15 @@ function App() {
     return objectWithHighestId.id
   }
 
-  const addMemberToLatlngs = (latlng) => {
-    //make object
-    const newId = findHighestLatlngId() + 1
-    const newObj = {
-      id: newId,
-      latlng : latlng
-    }
-    
-    setLatlngs([...latlngs, newObj]);
-    return newObj
+  const addLatLng = (latlng) => {
+    const newLatlngs = [...latlngs];
+    const id = newLatlngs.length > 0 ? newLatlngs[newLatlngs.length - 1].id + 1 : 1;
+    const newLatlng = { id: id, latlng: latlng };
+    newLatlngs.push(newLatlng);
+    console.log(newLatlngs)
+    setLatlngs(newLatlngs);
+
+    return newLatlng;
   }
 
   const getLatlngsFromIds = (ids) => {
@@ -134,18 +150,18 @@ function App() {
     }
     else{
       //add new latlng to our collection of latlngs    
-      const newLatlng = addMemberToLatlngs(clickedLatlng)
+      const newLatlng = addLatLng(clickedLatlng)
       myLatlngId = newLatlng.id
     }
-
+   
     //if polygon and marker selected, add point next to selected polygon
-    if(selectedDistrict !== null && selectedMarkerIndex !== null){
+    if(selectedPolygon !== null && selectedMarkerIndex !== null){
       const newDistricts = [...districts]
-      const districtIndex = selectedPolygon[0]
-      const zoneIndex = selectedPolygon[1]
+      const districtId = selectedPolygon[0]
+      const zoneId = selectedPolygon[1]
       const markerIndex = selectedMarkerIndex      
-      const zone = newDistricts[districtIndex][zoneIndex]
-      zone.splice(markerIndex + 1, 0 , myLatlngId)      
+      const zone = findZoneByDistrictAndZoneId(districtId,zoneId)
+      zone.pointIds.splice(markerIndex + 1, 0 , myLatlngId)      
       setDistricts(newDistricts)
     }else{
       //add my latlng's id to new zone array variable
@@ -156,17 +172,85 @@ function App() {
       setTmpZoneLatlngIds(newZone);
     }        
   };
-  const addZoneLatlngIdsToDistrict = () =>{
-    if(tmpZoneLatlngIds.length < 3){
-      window.alert('at least 3 points should be selected on the map')
-      return
+
+  const createDistrict = () => {
+    const districtId = districts.length + 1;
+    const newDistrict = { id: districtId, zones: [] };
+    setDistricts([...districts, newDistrict]);
+  };
+  const deleteDistrict = (districtId) => {
+    const updatedDistricts = districts.filter((district) => district.id !== districtId)
+      .map((district, index) => ({ ...district, id: index + 1 }));
+    setDistricts(updatedDistricts);
+  };
+  const addZoneToDistrict = (pointIds, districtId) => {
+    if(pointIds.length < 3) {
+      return window.alert('at least 3 points should be specified.')
     }
-    let tmp = [...districts];
-    tmp[selectedDistrict].push(tmpZoneLatlngIds)
-    // console.log(tmp)
-    setDistricts(tmp)
+    const updatedDistricts = [...districts];
+    const districtIndex = updatedDistricts.findIndex((district) => district.id === districtId);
+    const zoneId = updatedDistricts[districtIndex].zones.length + 1;    
+    const newZone = { id: zoneId, pointIds };
+    updatedDistricts[districtIndex].zones.push(newZone);
+    console.log('updated districts',updatedDistricts)
+    setDistricts(updatedDistricts);
     setTmpZoneLatlngIds([])//empty temp zone
-  }
+  };
+  const moveZoneUp = (districtId, zoneId) => {
+    const updatedDistricts = [...districts];
+
+    const districtIndex = updatedDistricts.findIndex((district) => district.id === districtId);
+    const zoneIndex = updatedDistricts[districtIndex].zones.findIndex((zone) => zone.id === zoneId);
+
+    if (zoneIndex > 0) {
+      const zoneToMove = updatedDistricts[districtIndex].zones.splice(zoneIndex, 1)[0];
+      updatedDistricts[districtIndex].zones.splice(zoneIndex - 1, 0, zoneToMove);
+
+      // Reassign zone IDs
+      updatedDistricts[districtIndex].zones.forEach((zone, index) => {
+        zone.id = index + 1;
+      });
+
+      setDistricts(updatedDistricts);
+    }
+  };
+  const moveZoneDown = (districtId, zoneId) => {
+    const updatedDistricts = [...districts];
+
+    const districtIndex = updatedDistricts.findIndex((district) => district.id === districtId);
+    const zoneIndex = updatedDistricts[districtIndex].zones.findIndex((zone) => zone.id === zoneId);
+
+    if (zoneIndex < updatedDistricts[districtIndex].zones.length - 1) {
+      const zoneToMove = updatedDistricts[districtIndex].zones.splice(zoneIndex, 1)[0];
+      updatedDistricts[districtIndex].zones.splice(zoneIndex + 1, 0, zoneToMove);
+
+      // Reassign zone IDs
+      updatedDistricts[districtIndex].zones.forEach((zone, index) => {
+        zone.id = index + 1;
+      });
+
+      setDistricts(updatedDistricts);
+    }
+  };
+
+  const deleteZone = (districtId, zoneId) => {
+    const updatedDistricts = districts.map((district) => {
+      if (district.id === districtId) {
+        const updatedZones = district.zones.filter((zone) => zone.id !== zoneId);
+        return {
+          ...district,
+          zones: updatedZones.map((zone, index) => ({
+            ...zone,
+            id: index + 1
+          }))
+        };
+      }
+      return district;
+    });
+
+    setDistricts(updatedDistricts);
+  };
+
   const undoTempZoneLatlngIds = () => {
     let tmp = [...tmpZoneLatlngIds]
     tmp.pop()
@@ -196,6 +280,148 @@ function App() {
     setImageTranslateY((prevPos) => prevPos +=y);   
   }
 
+  const saveGeoData = () => {
+    localStorage.setItem('GeoData',JSON.stringify({
+      districts : districts,
+      latlngs:latlngs
+    }))
+    window.alert('Geo Data Saved.')
+  }
+
+  const resetGeoData = () => {
+    if (window.confirm("Are U sure?")){
+      localStorage.removeItem('GeoData')
+      setDistricts([])
+      window.alert('Saved Geo Data Removed.')
+    }     
+  }
+
+  const exportGeoData = () =>{
+    navigator.clipboard.writeText(
+      JSON.stringify({
+        districts : districts,
+        latlngs:latlngs
+      })
+    )
+    .then(() => {
+      window.alert('Geo Data copied to clipboard.')
+    })
+    .catch((error) => {
+      window.alert('There was an error while copying Geo data to clipboard.')
+      console.error("Failed to copy: ", error);
+    });
+  }
+
+  const exportDistrictsAsNestedObjects = () => {
+    // const transformedObject = {};
+
+    // districts.forEach((subArray, index) => {
+    //   transformedObject[index + 1] = {
+    //     coordinates: [],
+    //     zones: {}
+    //   };
+
+    //   subArray.forEach((innerArray, innerIndex) => {
+    //     const key = `${index + 1}-${innerIndex + 1}`;
+    //     const coordinates = innerArray.map(number => {
+    //       const latlngObject = latlngs.find(obj => obj.id === number);
+    //       return latlngObject ? latlngObject.latlng : null;
+    //     });
+
+    //     transformedObject[index + 1].zones[key] = {
+    //       coordinates: coordinates.filter(Boolean)
+    //     };
+    //   });
+    // });
+
+    const addLeadingZero = (number) => {
+      if (number < 10) {
+        return '0' + number;
+      }
+      return number.toString();
+    }
+
+    var newDistricts = {};
+
+  // Iterate over each element in the object
+  for (var i = 0; i < districts.length; i++) {
+    var element = districts[i];
+
+    // Get the id and zones from the element
+    var id = element.id;
+    var zones = element.zones;
+
+    // Create the newDistricts object if it doesn't exist
+    if (!newDistricts[id]) {
+      newDistricts[id] = {
+        coordinates: [],
+        blocks: {}
+      };
+    }
+
+    // Iterate over each zone
+    for (var j = 0; j < zones.length; j++) {
+      var zone = zones[j];
+
+      // Get the zone id and pointIds
+      var zoneId = zone.id;
+      var pointIds = zone.pointIds;
+
+      // Create the block object if it doesn't exist
+      if (!newDistricts[id].blocks[`${id}-${addLeadingZero(zoneId)}`]) {
+        newDistricts[id].blocks[`${id}-${addLeadingZero(zoneId)}`] = {
+          coordinates: [getLatlngsFromIds(pointIds)]
+        };
+      } else {
+        // If the block object already exists, push the coordinates
+        newDistricts[id].blocks[`${id}-${addLeadingZero(zoneId)}`].coordinates.push(getLatlngsFromIds(pointIds));
+      }
+    }
+  }
+
+  // return newDistricts;
+    
+    navigator.clipboard.writeText(
+      JSON.stringify(newDistricts)
+    )
+    .then(() => {
+      window.alert('Object copied to clipboard.')
+    })
+    .catch((error) => {
+      window.alert('There was an error while copying object to clipboard.')
+      console.error("Failed to copy: ", error);
+    });
+  }
+
+  const moveDistrictAndZoneToEnd = (districtId, zoneId) => {
+    setDistricts(prevDistricts => {
+      const updatedDistricts = [...prevDistricts];
+
+      const districtIndex = updatedDistricts.findIndex(
+        district => district.id === districtId
+      );
+
+      if (districtIndex === -1) {
+        console.error('District not found');
+        return prevDistricts;
+      }
+
+      const district = updatedDistricts.splice(districtIndex, 1)[0];
+      updatedDistricts.push(district);
+
+      const zoneIndex = district.zones.findIndex(zone => zone.id === zoneId);
+
+      if (zoneIndex === -1) {
+        console.error('Zone not found');
+        return prevDistricts;
+      }
+
+      const zone = district.zones.splice(zoneIndex, 1)[0];
+      district.zones.push(zone);
+
+      return updatedDistricts;
+    });
+  }
 
   return (
     <div className="App" onKeyDown={checkKeyPress}>
@@ -404,36 +630,45 @@ function App() {
                 return(
                   <div key={dindex}>
                   {
-                    district.map((zone,zindex) =>{               
+                    district.zones.map((zone,zindex) =>{               
                       return (
-                        <div key={zindex}>                          
-                          <Polygon positions={getLatlngsFromIds(zone)} 
+                        <div 
+                          key={zindex} 
+                          className={zindex === 0 ? 'bring-to-front' : ''}
+                                                   
+                          >                          
+                          <Polygon 
+                            positions={getLatlngsFromIds(zone.pointIds)} 
+                            // style={{zindex:10000000}}
                             eventHandlers={{
                               click: (event) => {
-                                if(selectedPolygon !== null && selectedPolygon[0] === dindex && selectedPolygon[1] === zindex){
+                                if(selectedPolygon !== null && selectedPolygon[0] === district.id && selectedPolygon[1] === zone.id){
                                   setSelectedPolygon(null)
                                   setSelectedMarkerIndex(null)
                                 }else{
-                                  setSelectedPolygon([dindex,zindex])
+                                  setSelectedPolygon([district.id,zone.id])
                                   setSelectedMarkerIndex(null)
+                                  //move polygon to surface
+                                  moveDistrictAndZoneToEnd(district.id, zone.id);
                                 }
                               }
                             }}
                             pathOptions={{
-                              color: selectedPolygon !== null && selectedPolygon[0] === dindex && selectedPolygon[1] === zindex ? 'red' : '#3388ff' 
+                              color: selectedPolygon !== null && selectedPolygon[0] === district.id && selectedPolygon[1] === zone.id ? 'red' : '#3388ff'
                             }}>
                             <Tooltip>{`${dindex + 1} - ${zindex + 1}`}</Tooltip>
                           </Polygon>
                           {
-                            zone.map((latlngId,mindex)=>{
+                            zone.pointIds.map((latlngId,mindex)=>{
                               return(
-                                <Marker key={mindex} 
+                                <Marker 
+                                  key={mindex} 
                                   position={getLatlngsFromIds(latlngId)} 
-                                  draggable={true}
+                                  draggable={true}                                
                                   icon={
                                     selectedPolygon !== null &&
-                                    selectedPolygon[0] === dindex &&
-                                    selectedPolygon[1] === zindex &&
+                                    selectedPolygon[0] === district.id &&
+                                    selectedPolygon[1] === zone.id &&
                                     selectedMarkerIndex !== null &&
                                     selectedMarkerIndex === mindex  ? 
                                     SelectedMarkerIcon :
@@ -453,16 +688,16 @@ function App() {
 
                                         if(
                                           selectedPolygon !== null &&
-                                          selectedPolygon[0] !== dindex ||
-                                          selectedPolygon[1] !== zindex){
+                                          selectedPolygon[0] !== district.id ||
+                                          selectedPolygon[1] !== zone.id){
                                             console.log('selecting marker on an unselected polygon')
                                             return
                                           }
 
                                         if(
                                           selectedPolygon !== null &&
-                                          selectedPolygon[0] === dindex &&
-                                          selectedPolygon[1] === zindex &&
+                                          selectedPolygon[0] === district.id &&
+                                          selectedPolygon[1] === zone.id &&
                                           selectedMarkerIndex !== null &&
                                           selectedMarkerIndex === mindex                                          
                                           ) {
@@ -606,21 +841,20 @@ function App() {
                 <div>
                   <button onClick={(e)=>{
                     e.preventDefault()
-                    addZoneLatlngIdsToDistrict()
+                    addZoneToDistrict(tmpZoneLatlngIds,selectedDistrictId)
                     }}>add zone</button>
                     <span> to district </span>
                     <select 
-                      onChange={(e)=>{setSelectedDistrict(parseInt(e.target.value))}} >
+                      onChange={(e)=>{setSelectedDistrictId(parseInt(e.target.value))}} >
                       {
                         districts.map((district,index)=>{
                           return(
-                            <option key={index} value={index}>{index + 1}</option>
+                            <option key={index} value={district.id}>{district.id}</option>
                           )
                         })
                      
                       }
                     </select>
-                    <p>{`district ${selectedDistrict + 1} has been selected`}</p>
                  </div>
                 
                   :
@@ -630,9 +864,7 @@ function App() {
               <div>
                 <button onClick={(e)=>{
                   e.preventDefault();
-                  let tmp = [...districts]
-                  tmp.push([])
-                  setDistricts(tmp)
+                  createDistrict()
                 }}>
                   add district
                 </button>
@@ -644,32 +876,29 @@ function App() {
                 {districts.map((district, dindex) => {
                   return (
                     <div key={dindex}>
-                      <span>{`district ${dindex + 1} :`}</span>
+                      <span>{`district ${district.id} :`}</span>
                       <button
                         onClick={(e) => {
+                          e.preventDefault()
                           if (window.confirm("Are U sure?")){
                             e.preventDefault()
-                            let tmp = [...districts]
-                            tmp.splice(dindex, 1)
-                            setDistricts(tmp);
-                          }                    
+                            deleteDistrict(district.id)
+                          }        
                         }}
                       >
                         delete
                       </button>
                       <ol>
-                      {district.map((zone, zindex) => {
+                      {district.zones.map((zone, zindex) => {
                         return (
                           <div key={zindex}>
                             <li>
-                              {JSON.stringify(getLatlngsFromIds(zone)).substring(0, 30) + "..."}
+                              {JSON.stringify(getLatlngsFromIds(zone.pointIds)).substring(0, 30) + "..."}
                               <button
                                 onClick={(e) => {
                                   if (window.confirm("Are U sure?")) {
                                     e.preventDefault()
-                                    let tmp = [...districts]
-                                    tmp[dindex].splice(zindex, 1)
-                                    setDistricts(tmp);
+                                    deleteZone(district.id,zone.id)
                                   }                             
                                 }}
                               >
@@ -678,12 +907,7 @@ function App() {
                               <button
                                 onClick={(e) => {
                                   e.preventDefault();
-                                  if (zindex > 0) { // Check if the zone is not already the first zone
-                                    const tmp = [...districts];
-                                    const zoneToMoveUp = tmp[dindex].splice(zindex, 1)[0];
-                                    tmp[dindex].splice(zindex - 1, 0, zoneToMoveUp);
-                                    setDistricts(tmp);
-                                  }
+                                  moveZoneUp(district.id,zone.id)
                                 }}
                               >
                                 Move Up
@@ -691,13 +915,7 @@ function App() {
                               <button
                                 onClick={(e) => {
                                   e.preventDefault();
-                                  const tmp = [...districts];
-                                  const district = tmp[dindex];
-                                  if (zindex < district.length - 1) { // Check if the zone is not already the last element
-                                    const zoneToMoveDown = district.splice(zindex, 1)[0];
-                                    district.splice(zindex + 1, 0, zoneToMoveDown);
-                                    setDistricts(tmp);
-                                  }
+                                  moveZoneDown(district.id,zone.id)
                                 }}
                               >
                                 Move Down
@@ -722,11 +940,7 @@ function App() {
                 <button
                 onClick={(e)=>{
                   e.preventDefault()                 
-                  localStorage.setItem('GeoData',JSON.stringify({
-                    districts : districts,
-                    latlngs:latlngs
-                  }))
-                  window.alert('Geo Data Saved.')
+                  saveGeoData()
                 }}
                 >
                   Save Geo Data
@@ -734,95 +948,24 @@ function App() {
                 <button
                   onClick={(e)=>{
                   e.preventDefault()      
-                  if (window.confirm("Are U sure?")){
-                    localStorage.removeItem('GeoData')
-                    setDistricts([])
-                    window.alert('Saved Geo Data Removed.')
-                  }             
+                  resetGeoData()        
                 }}
                 >
-                  reset
+                  Reset 
                 </button>
                 <button
                   onClick={(e)=>{
                   e.preventDefault()      
-                  navigator.clipboard.writeText(
-                    JSON.stringify({
-                      districts : districts,
-                      latlngs:latlngs
-                    })
-                  )
-                  .then(() => {
-                    window.alert('Geo Data copied to clipboard.')
-                  })
-                  .catch((error) => {
-                    window.alert('There was an error while copying Geo data to clipboard.')
-                    console.error("Failed to copy: ", error);
-                  });
+                  exportGeoData()
                 }}
                 >
                   Export Geo Data
                 </button>
+                
                 <button
                   onClick={(e)=>{
                   e.preventDefault()    
-                  const districtsAsArrayOfLatlngs = districts.map(subArray => {
-                    return subArray.map(innerArray => {
-                      return innerArray.map(number => {
-                        const latlngObject = latlngs.find(obj => obj.id === number);
-                        return latlngObject ? latlngObject.latlng : number;
-                      });
-                    });
-                  });
-                  
-                  navigator.clipboard.writeText(
-                    JSON.stringify(districtsAsArrayOfLatlngs)
-                  )
-                  .then(() => {
-                    window.alert('Latlngs copied to clipboard.')
-                  })
-                  .catch((error) => {
-                    window.alert('There was an error while copying latlngs to clipboard.')
-                    console.error("Failed to copy: ", error);
-                  });
-                }}
-                >
-                  Export districts as array of latlngs
-                </button>
-                <button
-                  onClick={(e)=>{
-                  e.preventDefault()    
-                  const transformedObject = {};
-
-                  districts.forEach((subArray, index) => {
-                    transformedObject[index + 1] = {
-                      coordinates: [],
-                      zones: {}
-                    };
-
-                    subArray.forEach((innerArray, innerIndex) => {
-                      const key = `${index + 1}-${innerIndex + 1}`;
-                      const coordinates = innerArray.map(number => {
-                        const latlngObject = latlngs.find(obj => obj.id === number);
-                        return latlngObject ? latlngObject.latlng : null;
-                      });
-
-                      transformedObject[index + 1].zones[key] = {
-                        coordinates: coordinates.filter(Boolean)
-                      };
-                    });
-                  });
-                  
-                  navigator.clipboard.writeText(
-                    JSON.stringify(transformedObject)
-                  )
-                  .then(() => {
-                    window.alert('Object copied to clipboard.')
-                  })
-                  .catch((error) => {
-                    window.alert('There was an error while copying object to clipboard.')
-                    console.error("Failed to copy: ", error);
-                  });
+                  exportDistrictsAsNestedObjects()
                 }}
                 >
                   Export districts as nested objects
