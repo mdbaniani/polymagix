@@ -623,7 +623,7 @@ function App() {
             >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             {/* temporary zone */}
-            {tmpZoneLatlngIds.length > 0 && <Polygon positions={getLatlngsFromIds(tmpZoneLatlngIds)} />}
+            {tmpZoneLatlngIds.length > 0 && <Polygon className="tmp-polygon" positions={getLatlngsFromIds(tmpZoneLatlngIds)} />}
             {/* main polygons and markers */}    
             {
               districts.map((district,dindex) =>{     
@@ -746,8 +746,10 @@ function App() {
                 // Check if the target element is a polygon
                 const clickedLayer = e.originalEvent.target;
     
-                if (clickedLayer.tagName === "path" && clickedLayer.getAttribute("class").includes("leaflet-interactive")) {
-                  // Skip calling handleOnMapClick for polygons
+                if (clickedLayer.tagName === "path" && 
+                clickedLayer.getAttribute("class").includes("leaflet-interactive") &&
+                !clickedLayer.getAttribute("class").includes("tmp-polygon")) {
+                  // Skip calling handleOnMapClick for polygons except for tmp polygon
                   return;
                 }      
 
