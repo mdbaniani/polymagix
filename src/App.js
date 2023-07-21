@@ -609,12 +609,12 @@ function App() {
             {
               districts.map((district,dindex) =>{     
                 return(
-                  <div key={district.id}>
+                  <div key={dindex}>
                   {
                     district.zones.map((zone,zindex) =>{               
                       return (
                         <div 
-                          key={zone.id} 
+                          key={zindex} 
                           className={zindex === 0 ? 'bring-to-front' : ''}
                                                    
                           >                          
@@ -870,7 +870,7 @@ function App() {
                       >
                         delete
                       </button>
-                      <ol>
+                      <ul>
                       {district.zones.map((zone, zindex) => {
                         return (
                           <div key={zone.id}>
@@ -906,7 +906,7 @@ function App() {
                           </div>                    
                         );                  
                       })}
-                      </ol>   
+                      </ul>   
 
                     </div>
                   );
