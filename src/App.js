@@ -182,6 +182,7 @@ function App() {
     const updatedDistricts = districts.filter((district) => district.id !== districtId)
       .map((district, index) => ({ ...district, id: index + 1 }));
     setDistricts(updatedDistricts);
+    setSelectedDistrictId(1)
   };
   const addZoneToDistrict = (pointIds, districtId) => {
     if(pointIds.length < 3) {
@@ -313,26 +314,6 @@ function App() {
   }
 
   const exportDistrictsAsNestedObjects = () => {
-    // const transformedObject = {};
-
-    // districts.forEach((subArray, index) => {
-    //   transformedObject[index + 1] = {
-    //     coordinates: [],
-    //     zones: {}
-    //   };
-
-    //   subArray.forEach((innerArray, innerIndex) => {
-    //     const key = `${index + 1}-${innerIndex + 1}`;
-    //     const coordinates = innerArray.map(number => {
-    //       const latlngObject = latlngs.find(obj => obj.id === number);
-    //       return latlngObject ? latlngObject.latlng : null;
-    //     });
-
-    //     transformedObject[index + 1].zones[key] = {
-    //       coordinates: coordinates.filter(Boolean)
-    //     };
-    //   });
-    // });
 
     const addLeadingZero = (number) => {
       if (number < 10) {
@@ -628,18 +609,17 @@ function App() {
             {
               districts.map((district,dindex) =>{     
                 return(
-                  <div key={dindex}>
+                  <div key={district.id}>
                   {
                     district.zones.map((zone,zindex) =>{               
                       return (
                         <div 
-                          key={zindex} 
+                          key={zone.id} 
                           className={zindex === 0 ? 'bring-to-front' : ''}
                                                    
                           >                          
                           <Polygon 
                             positions={getLatlngsFromIds(zone.pointIds)} 
-                            // style={{zindex:10000000}}
                             eventHandlers={{
                               click: (event) => {
                                 if(selectedPolygon !== null && selectedPolygon[0] === district.id && selectedPolygon[1] === zone.id){
@@ -656,7 +636,7 @@ function App() {
                             pathOptions={{
                               color: selectedPolygon !== null && selectedPolygon[0] === district.id && selectedPolygon[1] === zone.id ? 'red' : '#3388ff'
                             }}>
-                            <Tooltip>{`${dindex + 1} - ${zindex + 1}`}</Tooltip>
+                            <Tooltip>{`${district.id} - ${zone.id}`}</Tooltip>
                           </Polygon>
                           {
                             zone.pointIds.map((latlngId,mindex)=>{
@@ -851,7 +831,7 @@ function App() {
                       {
                         districts.map((district,index)=>{
                           return(
-                            <option key={index} value={district.id}>{district.id}</option>
+                            <option key={district.id} value={district.id}>{district.id}</option>
                           )
                         })
                      
@@ -877,7 +857,7 @@ function App() {
                 <ol>
                 {districts.map((district, dindex) => {
                   return (
-                    <div key={dindex}>
+                    <div key={district.id}>
                       <span>{`district ${district.id} :`}</span>
                       <button
                         onClick={(e) => {
@@ -893,7 +873,7 @@ function App() {
                       <ol>
                       {district.zones.map((zone, zindex) => {
                         return (
-                          <div key={zindex}>
+                          <div key={zone.id}>
                             <li>
                               {JSON.stringify(getLatlngsFromIds(zone.pointIds)).substring(0, 30) + "..."}
                               <button
