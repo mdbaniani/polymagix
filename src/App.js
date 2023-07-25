@@ -6,8 +6,9 @@ import L, { latLng } from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import MapEvents from "./Components/MapEvents";
-import SelectedMarkerIcon from "./Components/SelectedMarkerIcon";
+import MarkerIcon2 from "./Components/MarkerIcon2";
 import DefaultMarkerIcon from "./Components/DefaultMarkerIcon";
+import MarkerIcon3 from "./Components/MarkerIcon3";
 
 //fix marker image missing
 let DefaultIcon = L.icon({
@@ -24,7 +25,7 @@ const defaultSettings = localStorage.getItem('Settings') ? JSON.parse(localStora
 
 function App() {
   const [districts,setDistricts] = useState([])//array of district objects
-  const [tmpZoneLatlngIds, setTmpZoneLatlngIds] = useState([]);
+  const [tmpZonePoints, setTmpZonePoints] = useState([]);
   const [imageUrl, setImageUrl] = useState(defaultSettings && defaultSettings.imageUrl ? defaultSettings.imageUrl : null);
   const [isImageLocked,setIsImageLocked] = useState(defaultSettings ? defaultSettings.isImageLocked : false)
   const [isImageHidden,setIsImageHidden] = useState(false)
@@ -98,7 +99,7 @@ function App() {
         // console.log(zoneId)
         // console.log(zone)
         // return
-        zone.pointIds.splice(markerIndex, 1)      
+        zone.points.splice(markerIndex, 1)      
         setDistricts(newDistricts)
       }
       //reset marker selection
@@ -125,18 +126,47 @@ function App() {
     return newLatlng;
   }
 
-  const getLatlngsFromIds = (ids) => {
-    if (Array.isArray(ids)) {
-      return ids.map(id => {
-        const foundObject = latlngs.find(obj => obj.id === id);
-        return foundObject ? foundObject.latlng : null;
-      });
-    } else {
-      const foundObject = latlngs.find(obj => obj.id === ids);
-      return foundObject ? foundObject.latlng : null;
+  function getLatlngsFromPoints(points) {
+    if (!Array.isArray(points)) {
+      const { latlngid } = points;
+      const matchingLatlng = latlngs.find((latlng) => latlng.id === latlngid);
+      return matchingLatlng ? matchingLatlng.latlng : null;
     }
-  };
   
+    const pureLatlngs = [];
+  
+    points.forEach((point) => {
+      const { latlngid } = point;
+      const matchingLatlng = latlngs.find((latlng) => latlng.id === latlngid);
+  
+      if (matchingLatlng) {
+        pureLatlngs.push(matchingLatlng.latlng);
+      }
+    });
+  
+    return pureLatlngs;
+  }
+  
+  
+  
+  const findNextAvailablePointId = () => {
+    const data = [...districts]
+    let maxPointId = 0;
+  
+    // Iterate through the districts and zones to find the maximum point id
+    for (const district of data) {
+      for (const zone of district.zones) {
+        for (const point of zone.points) {
+          if (point.id > maxPointId) {
+            maxPointId = point.id;
+          }
+        }
+      }
+    }
+  
+    // The next available point id will be one greater than the maximum point id found
+    return maxPointId + 1;
+  }
   
   const handleOnMapClick = (e) => {
     let clickedLatlng = [e.latlng.lat,e.latlng.lng]
@@ -154,6 +184,8 @@ function App() {
       myLatlngId = newLatlng.id
     }
    
+    const newPointId = findNextAvailablePointId()
+    const newPoint = {id: newPointId,latlngid : myLatlngId}
     //if polygon and marker selected, add point next to selected polygon
     if(selectedPolygon !== null && selectedMarkerIndex !== null){
       const newDistricts = [...districts]
@@ -161,15 +193,14 @@ function App() {
       const zoneId = selectedPolygon[1]
       const markerIndex = selectedMarkerIndex      
       const zone = findZoneByDistrictAndZoneId(districtId,zoneId)
-      zone.pointIds.splice(markerIndex + 1, 0 , myLatlngId)      
+      zone.points.splice(markerIndex + 1, 0 , newPoint)      
       setDistricts(newDistricts)
     }else{
       //add my latlng's id to new zone array variable
-      const newZone = [...tmpZoneLatlngIds, myLatlngId];
+      const newZone = [...tmpZonePoints, newPoint];
       console.log('new zone ids',newZone)
-      // console.log('new zone latlngs',getLatlngsFromIds(newZone))
 
-      setTmpZoneLatlngIds(newZone);
+      setTmpZonePoints(newZone);
     }        
   };
 
@@ -184,18 +215,18 @@ function App() {
     setDistricts(updatedDistricts);
     setSelectedDistrictId(1)
   };
-  const addZoneToDistrict = (pointIds, districtId) => {
-    if(pointIds.length < 3) {
+  const addZoneToDistrict = (tmpPoints, districtId) => {
+    if(tmpPoints.length < 3) {
       return window.alert('at least 3 points should be specified.')
     }
     const updatedDistricts = [...districts];
     const districtIndex = updatedDistricts.findIndex((district) => district.id === districtId);
     const zoneId = updatedDistricts[districtIndex].zones.length + 1;    
-    const newZone = { id: zoneId, pointIds };
+    const newZone = { id: zoneId, points : tmpPoints };
     updatedDistricts[districtIndex].zones.push(newZone);
     console.log('updated districts',updatedDistricts)
     setDistricts(updatedDistricts);
-    setTmpZoneLatlngIds([])//empty temp zone
+    setTmpZonePoints([])//empty temp zone
   };
   const moveZoneUp = (districtId, zoneId) => {
     const updatedDistricts = [...districts];
@@ -253,9 +284,9 @@ function App() {
   };
 
   const undoTempZoneLatlngIds = () => {
-    let tmp = [...tmpZoneLatlngIds]
+    let tmp = [...tmpZonePoints]
     tmp.pop()
-    setTmpZoneLatlngIds(tmp)
+    setTmpZonePoints(tmp)
   }
   const handleImageChange = (e) => {
     // const selectedImage = e.target.files[0];
@@ -344,18 +375,18 @@ function App() {
     for (var j = 0; j < zones.length; j++) {
       var zone = zones[j];
 
-      // Get the zone id and pointIds
+      // Get the zone id and points
       var zoneId = zone.id;
-      var pointIds = zone.pointIds;
+      var points = zone.points;
 
       // Create the block object if it doesn't exist
       if (!newDistricts[id].blocks[`${id}-${addLeadingZero(zoneId)}`]) {
         newDistricts[id].blocks[`${id}-${addLeadingZero(zoneId)}`] = {
-          coordinates: [getLatlngsFromIds(pointIds)]
+          coordinates: [getLatlngsFromPoints(points)]
         };
       } else {
         // If the block object already exists, push the coordinates
-        newDistricts[id].blocks[`${id}-${addLeadingZero(zoneId)}`].coordinates.push(getLatlngsFromIds(pointIds));
+        newDistricts[id].blocks[`${id}-${addLeadingZero(zoneId)}`].coordinates.push(getLatlngsFromPoints(points));
       }
     }
   }
@@ -604,7 +635,7 @@ function App() {
             >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             {/* temporary zone */}
-            {tmpZoneLatlngIds.length > 0 && <Polygon className="tmp-polygon" positions={getLatlngsFromIds(tmpZoneLatlngIds)} />}
+            {tmpZonePoints.length > 0 && <Polygon className="tmp-polygon" positions={getLatlngsFromPoints(tmpZonePoints)} />}
             {/* main polygons and markers */}    
             {
               districts.map((district,dindex) =>{     
@@ -619,7 +650,7 @@ function App() {
                                                    
                           >                          
                           <Polygon 
-                            positions={getLatlngsFromIds(zone.pointIds)} 
+                            positions={getLatlngsFromPoints(zone.points)} 
                             eventHandlers={{
                               click: (event) => {
                                 if(selectedPolygon !== null && selectedPolygon[0] === district.id && selectedPolygon[1] === zone.id){
@@ -639,19 +670,24 @@ function App() {
                             <Tooltip>{`${district.id} - ${zone.id}`}</Tooltip>
                           </Polygon>
                           {
-                            zone.pointIds.map((latlngId,mindex)=>{
+                            zone.points.map((point,pindex)=>{
                               return(
                                 <Marker 
-                                  key={mindex} 
-                                  position={getLatlngsFromIds(latlngId)} 
+                                  key={pindex} 
+                                  position={getLatlngsFromPoints(point)} 
                                   draggable={true}                                
                                   icon={
                                     selectedPolygon !== null &&
                                     selectedPolygon[0] === district.id &&
                                     selectedPolygon[1] === zone.id &&
+                                    selectedMarkerIndex !== pindex  ? 
+                                    MarkerIcon2 :
+                                    selectedPolygon !== null &&
+                                    selectedPolygon[0] === district.id &&
+                                    selectedPolygon[1] === zone.id &&
                                     selectedMarkerIndex !== null &&
-                                    selectedMarkerIndex === mindex  ? 
-                                    SelectedMarkerIcon :
+                                    selectedMarkerIndex === pindex  ? 
+                                    MarkerIcon3 :
                                     DefaultMarkerIcon
                                     }
                                   eventHandlers={{
@@ -679,11 +715,11 @@ function App() {
                                           selectedPolygon[0] === district.id &&
                                           selectedPolygon[1] === zone.id &&
                                           selectedMarkerIndex !== null &&
-                                          selectedMarkerIndex === mindex                                          
+                                          selectedMarkerIndex === pindex                                          
                                           ) {
                                             setSelectedMarkerIndex(null)
                                           } else {
-                                            setSelectedMarkerIndex(mindex)
+                                            setSelectedMarkerIndex(pindex)
                                           }                                        
                                       }else{
                                         handleOnMapClick(e)
@@ -697,7 +733,7 @@ function App() {
                                       //update latlngs object
                                       setLatlngs(prevArray => {
                                         return prevArray.map(obj => {
-                                          if (obj.id === latlngId) {
+                                          if (obj.id === point.latlngid) {
                                             return { ...obj, latlng: [lat,lng]};
                                           }
                                           return obj;
@@ -810,8 +846,8 @@ function App() {
           <fieldset>
             <legend>Districts</legend>              
               <div>
-                <span>{`${tmpZoneLatlngIds.length} points selected.`}</span>
-                {tmpZoneLatlngIds.length > 0 ?
+                <span>{`${tmpZonePoints.length} points selected.`}</span>
+                {tmpZonePoints.length > 0 ?
                   <button onClick={(e) => {
                     e.preventDefault()
                     undoTempZoneLatlngIds()
@@ -823,7 +859,7 @@ function App() {
                 <div>
                   <button onClick={(e)=>{
                     e.preventDefault()
-                    addZoneToDistrict(tmpZoneLatlngIds,selectedDistrictId)
+                    addZoneToDistrict(tmpZonePoints,selectedDistrictId)
                     }}>add zone</button>
                     <span> to district </span>
                     <select 
@@ -875,7 +911,7 @@ function App() {
                         return (
                           <div key={zone.id}>
                             <li>
-                              {JSON.stringify(getLatlngsFromIds(zone.pointIds)).substring(0, 30) + "..."}
+                              {JSON.stringify(getLatlngsFromPoints(zone.points)).substring(0, 30) + "..."}
                               <button
                                 onClick={(e) => {
                                   if (window.confirm("Are U sure?")) {
